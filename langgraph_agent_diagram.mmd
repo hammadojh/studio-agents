@@ -12,6 +12,7 @@ graph TD;
 	answer_with_llm(answer_with_llm)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> route_prompt;
+	clarify_loop -. &nbsp;needs_clarification&nbsp; .-> __end__;
 	clarify_loop -. &nbsp;refined&nbsp; .-> refine_prompt;
 	refine_prompt --> run_claude_code;
 	route_prompt -. &nbsp;answer&nbsp; .-> answer_with_llm;
