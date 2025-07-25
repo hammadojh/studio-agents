@@ -1,0 +1,25 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	route_prompt(route_prompt)
+	clarify_loop(clarify_loop)
+	refine_prompt(refine_prompt)
+	run_claude_code(run_claude_code)
+	answer_with_llm(answer_with_llm)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> route_prompt;
+	clarify_loop -. &nbsp;refined&nbsp; .-> refine_prompt;
+	refine_prompt --> run_claude_code;
+	route_prompt -. &nbsp;answer&nbsp; .-> answer_with_llm;
+	route_prompt -. &nbsp;clarify&nbsp; .-> clarify_loop;
+	route_prompt -. &nbsp;code&nbsp; .-> refine_prompt;
+	answer_with_llm --> __end__;
+	run_claude_code --> __end__;
+	clarify_loop -. &nbsp;continue&nbsp; .-> clarify_loop;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
