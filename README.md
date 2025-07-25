@@ -7,7 +7,7 @@ A comprehensive LangGraph-powered AI assistant that intelligently routes user re
 - **Intelligent Routing**: Automatically classifies requests as needing clarification, code generation, or direct answers
 - **Multi-turn Clarification**: Engages in conversation to understand vague requests
 - **Prompt Refinement**: Polishes clarified requests into actionable prompts
-- **Claude Code Integration**: Ready for Claude Code CLI integration (placeholder implemented)
+- **Claude Code Integration**: Full Claude Code CLI integration with streaming output and complete permissions
 - **Direct LLM Answers**: Provides informational responses using GPT-4o
 - **Interactive Mode**: Command-line interface for testing and demonstration
 
@@ -25,8 +25,8 @@ Route Analysis (GPT-4o)
 │ Questions   │  Prompt     │  LLM        │
 │     ↓       │     ↓       │  Answer     │
 │ Refinement  │  Claude     │             │
-│     ↓       │  Code       │             │
-│ Claude Code │ (Placeholder)│             │
+│     ↓       │  Code CLI   │             │
+│ Claude Code │ (LIVE)      │             │
 └─────────────┴─────────────┴─────────────┘
 ```
 
@@ -49,8 +49,14 @@ export OPENAI_API_KEY=your_openai_api_key_here
 export ANTHROPIC_API_KEY=your_anthropic_api_key_here  # Optional for now
 ```
 
-### 4. (Optional) Install Claude Code CLI
-Follow the official Claude Code installation instructions to enable the code generation features.
+### 4. Install Claude Code CLI
+```bash
+# Option 1: Use our helper script
+python install_claude_code.py
+
+# Option 2: Manual installation
+npm install -g @anthropic-ai/claude-code
+```
 
 ## 🎮 Usage
 
@@ -105,7 +111,7 @@ print(f"Final result: {result['final_result']}")
 1. **`route_prompt`**: Analyzes and classifies user requests
 2. **`clarify_loop`**: Handles multi-turn clarification conversations
 3. **`refine_prompt`**: Polishes requests into actionable prompts
-4. **`run_claude_code`**: Executes code generation (placeholder)
+4. **`run_claude_code`**: Executes code generation with Claude Code CLI and streaming output
 5. **`answer_with_llm`**: Provides direct informational answers
 
 ### State Flow
@@ -130,12 +136,42 @@ Each request flows through the system maintaining:
 
 ## 🎯 Next Steps
 
-### Claude Code Integration
-The system is ready for Claude Code CLI integration. To implement:
+### Claude Code Integration ✅ 
+The system now includes full Claude Code CLI integration with:
 
-1. Install Claude Code CLI
-2. Uncomment the implementation in `run_claude_code()` function
-3. Test with code generation requests
+- **Streaming Output**: Real-time display of Claude's thinking process
+- **Full Permissions**: Uses `--dangerously-skip-permissions` for complete access
+- **Human-Readable Tool Parsing**: Clear descriptions of what Claude is doing (e.g., "📝 Creating file: app.js" instead of raw tool IDs)
+- **Smart Result Parsing**: Converts tool results into meaningful messages (e.g., "✅ File created successfully")
+- **Enhanced Progress Visibility**: Shows thinking vs. action phases with appropriate emojis
+- **Error Handling**: Comprehensive error handling with helpful messages
+- **Performance Metrics**: Displays execution time, cost, and turns used
+
+**Example Output:**
+```bash
+🟢 Claude Code initialized - Model: claude-sonnet-4-20250514
+   Working directory: /Users/user/project
+   Permission mode: bypassPermissions
+
+🧠 Claude thinking: I need to create a todo app with HTML, CSS, and JavaScript...
+📝 Creating file: index.html
+✅ File created successfully
+📋 Updating todo list
+📝 Creating file: style.css  
+✅ File created successfully
+📄 Writing file: script.js
+✅ File written successfully
+🤖 Claude: I've created a complete todo application with...
+
+✅ Claude Code completed successfully!
+   Duration: 12.34s | Cost: $0.0234 | Turns: 3
+```
+
+**Key Features:**
+- 🧠 **Thinking Display**: Shows Claude's reasoning process
+- 📝 **Tool Actions**: Human-readable descriptions of file operations
+- ✅ **Result Parsing**: Clear success/error messages
+- 📋 **Progress Updates**: Real-time feedback on what's happening
 
 ### Enhancements
 - Vector memory for conversation context
@@ -162,7 +198,7 @@ The system tracks processing steps in `state.processing_steps` for debugging rou
 - ✅ Prompt Refinement
 - ✅ Direct LLM Answers
 - ✅ Interactive Interface
-- 🔄 Claude Code Integration (Placeholder)
+- ✅ Claude Code Integration (Full Implementation)
 - 🔄 Vector Memory (Future)
 - 🔄 Web Interface (Future)
 

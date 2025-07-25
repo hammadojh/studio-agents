@@ -15,6 +15,9 @@ Date: 2024
 
 import json
 import subprocess
+import tempfile
+import asyncio
+import time
 from typing import Dict, Any, List, Optional, Literal, TypedDict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -677,16 +680,20 @@ def refine_prompt(state: AgentState) -> AgentState:
 @conditional_traceable
 def run_claude_code(state: AgentState) -> AgentState:
     """
-    Executes the refined prompt using Claude Code CLI.
+    Executes the refined prompt using Claude Code CLI with full access and streaming output.
     
     This node:
     1. Prepares the refined prompt for Claude Code
-    2. Executes the Claude Code CLI command
-    3. Parses the result and handles errors
-    4. Updates the state with the execution results
+    2. Executes the Claude Code CLI command with full permissions
+    3. Streams output to show Claude's thinking process
+    4. Parses the result and handles errors
+    5. Updates the state with the execution results
     
-    NOTE: This is currently a placeholder implementation as requested.
-    The actual Claude Code integration will be implemented later.
+    Features:
+    - Full access mode with --dangerously-skip-permissions
+    - Streaming JSON output to show thinking
+    - Real-time terminal feedback
+    - Comprehensive error handling
     
     Args:
         state: Current agent state
@@ -696,11 +703,11 @@ def run_claude_code(state: AgentState) -> AgentState:
     """
     try:
         writer = get_stream_writer()
-        writer("⚙️ Starting Claude Code execution (PLACEHOLDER)...")
+        writer("⚡ Starting Claude Code execution with full access...")
     except:
         pass
         
-    add_step(state, "Starting Claude Code execution (PLACEHOLDER)")
+    add_step(state, "Starting Claude Code execution with streaming output")
     
     try:
         writer = get_stream_writer()
@@ -708,74 +715,261 @@ def run_claude_code(state: AgentState) -> AgentState:
     except:
         pass
     
-    # PLACEHOLDER IMPLEMENTATION
-    # In the real implementation, this would:
-    # 1. Write the refined prompt to a temporary file
-    # 2. Execute: subprocess.run(["claude", "code", "--prompt-file", temp_file])
-    # 3. Parse the JSON output from Claude Code
-    # 4. Handle any errors or edge cases
+    # Get the refined prompt
+    prompt = state.get("refined_prompt", "")
+    if not prompt:
+        state["error_message"] = "No refined prompt available for Claude Code execution"
+        return state
+    
+    print(f"\n🎯 EXECUTING CLAUDE CODE:")
+    print(f"{'='*60}")
+    print(f"Prompt: {prompt[:100]}...")
+    print(f"{'='*60}")
     
     try:
-        writer = get_stream_writer()
-        writer("🔧 Simulating Claude Code execution...")
-    except:
-        pass
-    
-    placeholder_result = f"""
-    PLACEHOLDER CLAUDE CODE EXECUTION
-    
-    Refined Prompt:
-    {state["refined_prompt"]}
-    
-    This would normally execute the Claude Code CLI with the above prompt
-    and return the generated code, file changes, or execution results.
-    
-    Expected implementation:
-    ```python
-    import tempfile
-    import subprocess
-    import json
-    
-    # Write prompt to temporary file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-        f.write(state.refined_prompt)
-        prompt_file = f.name
-    
-    try:
-        # Execute Claude Code CLI
-        result = subprocess.run([
-            "claude", "code", 
-            "--prompt-file", prompt_file,
-            "--output-format", "json"
-        ], capture_output=True, text=True, timeout=300)
+        # Prepare Claude Code command with full access and streaming
+        cmd = [
+            "claude",
+            "-p",  # Print mode (non-interactive)
+            prompt,
+            "--output-format", "stream-json",  # Stream JSON for real-time output
+            "--verbose",  # Required for stream-json output format
+            "--dangerously-skip-permissions"  # Full access as requested
+            # "--max-turns", "10"  # Allow multiple turns for complex tasks
+        ]
         
-        if result.returncode == 0:
-            # Parse JSON result
-            claude_output = json.loads(result.stdout)
-            state.final_result = claude_output.get("result", "")
-        else:
-            state.error_message = f"Claude Code error: {'result.stderr'}"
+        try:
+            writer = get_stream_writer()
+            writer(f"🚀 Executing: {' '.join(cmd[:3])} [with streaming and full permissions]")
+        except:
+            pass
+        
+        print(f"\n🔄 CLAUDE CODE STREAMING OUTPUT:")
+        print(f"{'='*60}")
+        
+        # Execute Claude Code with streaming output
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,  # Line buffered
+            universal_newlines=True
+        )
+        
+        output_lines = []
+        thinking_messages = []
+        final_result = ""
+        assistant_messages = []
+        error_occurred = False
+        
+        # Stream and process output in real-time
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+                
+            if output:
+                line = output.strip()
+                if line:
+                    try:
+                        # Parse each JSON line
+                        json_data = json.loads(line)
+                        
+                        # Handle different message types from Claude Code SDK
+                        msg_type = json_data.get("type", "")
+                        
+                        if msg_type == "system" and json_data.get("subtype") == "init":
+                            print(f"🟢 Claude Code initialized - Model: {json_data.get('model', 'unknown')}")
+                            print(f"   Working directory: {json_data.get('cwd', 'unknown')}")
+                            print(f"   Permission mode: {json_data.get('permissionMode', 'unknown')}")
+                            
+                        elif msg_type == "assistant":
+                            message = json_data.get("message", {})
+                            content = message.get("content", [])
+                            
+                            for content_block in content:
+                                if content_block.get("type") == "text":
+                                    text = content_block.get("text", "")
+                                    assistant_messages.append(text)
+                                    
+                                    # Check if this is thinking/reasoning content
+                                    if text.strip().startswith("<thinking>") or "I need to" in text or "Let me" in text:
+                                        print(f"🧠 Claude thinking: {text[:150]}...")
+                                        if len(text) > 150:
+                                            print(f"         [...{len(text)-150} more characters]")
+                                    else:
+                                        # Show Claude's regular response
+                                        print(f"🤖 Claude: {text[:200]}...")
+                                        if len(text) > 200:
+                                            print(f"         [...{len(text)-200} more characters]")
+                                
+                                elif content_block.get("type") == "tool_use":
+                                    tool_name = content_block.get("name", "unknown_tool")
+                                    tool_input = content_block.get("input", {})
+                                    
+                                    # Show more descriptive tool usage
+                                    if tool_name == "str_replace_editor":
+                                        command = tool_input.get("command", "")
+                                        path = tool_input.get("path", "")
+                                        if command == "create":
+                                            print(f"📝 Creating file: {path}")
+                                        elif command == "str_replace":
+                                            print(f"✏️  Editing file: {path}")
+                                        elif command == "view":
+                                            print(f"👀 Reading file: {path}")
+                                        else:
+                                            print(f"🔧 File operation ({command}): {path}")
+                                    
+                                    elif tool_name == "bash":
+                                        command = tool_input.get("command", "")[:60]
+                                        print(f"⚡ Running command: {command}...")
+                                    
+                                    elif tool_name == "todo_write" or tool_name == "TodoWrite":
+                                        print(f"📋 Updating todo list")
+                                    
+                                    elif tool_name == "web_search" or tool_name == "WebSearch":
+                                        query = tool_input.get("query", "")[:50]
+                                        print(f"🔍 Web search: {query}...")
+                                    
+                                    elif tool_name == "edit_file" or tool_name == "Edit":
+                                        target_file = tool_input.get("target_file", "")
+                                        print(f"✏️  Editing: {target_file}")
+                                    
+                                    elif tool_name == "write" or tool_name == "Write":
+                                        target_file = tool_input.get("target_file", "")
+                                        print(f"📄 Writing file: {target_file}")
+                                    
+                                    elif tool_name == "read_file" or tool_name == "Read":
+                                        target_file = tool_input.get("target_file", "")
+                                        print(f"👀 Reading: {target_file}")
+                                    
+                                    else:
+                                        print(f"🔧 Using tool: {tool_name}")
+                                    
+                        elif msg_type == "user":
+                            message = json_data.get("message", {})
+                            content = message.get("content", "")
+                            
+                            # Parse user messages (often tool results)
+                            if isinstance(content, list) and content:
+                                for content_item in content:
+                                    if content_item.get("type") == "text":
+                                        user_text = content_item.get("text", "")
+                                        if user_text.strip():
+                                            print(f"👤 User: {user_text[:100]}...")
+                                    
+                                    elif content_item.get("type") == "tool_result":
+                                        tool_use_id = content_item.get("tool_use_id", "unknown")
+                                        tool_content = content_item.get("content", "")
+                                        
+                                        # Parse common tool result patterns
+                                        if "File created successfully" in str(tool_content):
+                                            print(f"✅ File created successfully")
+                                        elif "File written successfully" in str(tool_content):
+                                            print(f"✅ File written successfully") 
+                                        elif "Todos have been" in str(tool_content):
+                                            print(f"📋 Todo list updated")
+                                        elif "Command completed" in str(tool_content):
+                                            print(f"⚡ Command executed successfully")
+                                        elif "Error" in str(tool_content):
+                                            print(f"❌ Tool error: {str(tool_content)[:100]}...")
+                                        else:
+                                            # For other tool results, show a summary
+                                            content_str = str(tool_content)
+                                            if len(content_str) > 150:
+                                                print(f"🔧 Tool result: {content_str[:150]}...")
+                                            else:
+                                                print(f"🔧 Tool result: {content_str}")
+                            
+                            elif isinstance(content, str) and content.strip():
+                                print(f"👤 User: {content[:100]}...")
+                        
+                        elif msg_type == "result":
+                            subtype = json_data.get("subtype", "")
+                            if subtype == "success":
+                                final_result = json_data.get("result", "")
+                                duration = json_data.get("duration_ms", 0) / 1000
+                                cost = json_data.get("total_cost_usd", 0)
+                                turns = json_data.get("num_turns", 0)
+                                
+                                print(f"\n✅ Claude Code completed successfully!")
+                                print(f"   Duration: {duration:.2f}s | Cost: ${cost:.4f} | Turns: {turns}")
+                                
+                            elif subtype in ["error_max_turns", "error_during_execution"]:
+                                error_occurred = True
+                                duration = json_data.get("duration_ms", 0) / 1000
+                                cost = json_data.get("total_cost_usd", 0)
+                                
+                                print(f"\n❌ Claude Code error: {subtype}")
+                                print(f"   Duration: {duration:.2f}s | Cost: ${cost:.4f}")
+                        
+                        output_lines.append(line)
+                        
+                    except json.JSONDecodeError:
+                        # Non-JSON output, might be error or debug info
+                        print(f"📝 Raw output: {line}")
+                        output_lines.append(line)
+        
+        # Wait for process to complete and get return code
+        return_code = process.wait(timeout=600)  # 10 minute timeout
+        
+        # Get any remaining stderr
+        stderr = process.stderr.read()
+        
+        print(f"{'='*60}")
+        
+        if return_code == 0 and not error_occurred:
+            # Success case
+            if final_result:
+                state["final_result"] = final_result
+                print(f"✅ SUCCESS: Claude Code execution completed")
+                print(f"Result length: {len(final_result)} characters")
+            else:
+                # Fallback to assistant messages if no final result
+                combined_result = "\n\n".join(assistant_messages)
+                state["final_result"] = combined_result or "Claude Code executed successfully but no output captured"
+                print(f"✅ SUCCESS: Using assistant messages as result ({len(combined_result)} chars)")
             
+            add_step(state, "Claude Code execution completed successfully")
+            
+        else:
+            # Error case
+            error_msg = f"Claude Code failed with return code {return_code}"
+            if stderr:
+                error_msg += f"\nError output: {stderr}"
+            
+            state["error_message"] = error_msg
+            print(f"❌ ERROR: {error_msg}")
+            add_step(state, f"Claude Code execution failed: {error_msg}")
+        
+        try:
+            writer = get_stream_writer()
+            writer(f"✅ Claude Code execution completed with return code {return_code}")
+        except:
+            pass
+        
     except subprocess.TimeoutExpired:
-        state.error_message = "Claude Code execution timed out"
-    except json.JSONDecodeError:
-        state.error_message = "Failed to parse Claude Code output"
+        error_msg = "Claude Code execution timed out (10 minutes)"
+        state["error_message"] = error_msg
+        print(f"⏰ TIMEOUT: {error_msg}")
+        add_step(state, error_msg)
+        try:
+            process.kill()
+        except:
+            pass
+            
+    except FileNotFoundError:
+        error_msg = "Claude Code CLI not found. Please install: npm install -g @anthropic-ai/claude-code"
+        state["error_message"] = error_msg
+        print(f"❌ INSTALLATION ERROR: {error_msg}")
+        add_step(state, error_msg)
+        
     except Exception as e:
-        state.error_message = f"Unexpected error: {'str(e)'}"
-    finally:
-        # Cleanup
-        os.unlink(prompt_file)
-    ```
-    """
-    
-    state["final_result"] = placeholder_result
-    add_step(state, "Claude Code execution completed (placeholder)")
-    
-    try:
-        writer = get_stream_writer()
-        writer("✅ Claude Code execution completed - placeholder result generated")
-    except:
-        pass
+        error_msg = f"Unexpected error during Claude Code execution: {str(e)}"
+        state["error_message"] = error_msg
+        print(f"💥 UNEXPECTED ERROR: {error_msg}")
+        add_step(state, error_msg)
     
     return state
 
