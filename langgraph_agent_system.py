@@ -68,11 +68,13 @@ def conditional_traceable(func):
 
 # Global flags for different execution modes
 TESTING_MODE = False
+HTTP_MODE = False
 
-def set_execution_modes(testing=False, thinking=False, steps=False):
+def set_execution_modes(testing=False, thinking=False, steps=False, http=False):
     """Set global execution modes"""
-    global TESTING_MODE
+    global TESTING_MODE, HTTP_MODE
     TESTING_MODE = testing
+    HTTP_MODE = http
 
 def print_action(message: str):
     """Print action messages (always shown unless testing mode)"""
@@ -359,101 +361,119 @@ def clarify_loop(state: AgentState) -> AgentState:
         except:
             pass
         
-        # STOP HERE and ask the user for input
-        if not TESTING_MODE:
-            print("\n" + "="*60)
-            print("🤖 CLARIFICATION NEEDED")
-            print("="*60)
-            print(f"❓ {question}")
-            print("-"*60)
+        # Handle clarification differently based on mode
+        if HTTP_MODE:
+            # For HTTP mode, mark clarification as "complete" but store the question
+            # This prevents the graph from looping and allows it to end gracefully
+            state["clarified"] = True  # Set to True to end the graph
+            state["clarification_question"] = question
+            state["final_result"] = f"I need more information: {question}"
+            add_step(state, f"Clarification needed (HTTP mode): {question}")
             
-            # Get real user input
-            user_response = input("💬 Your response: ").strip()
+            try:
+                writer = get_stream_writer()
+                writer("🔄 Clarification needed - ending graph for HTTP response")
+            except:
+                pass
+            
+            # Return with clarified=True so graph ends instead of looping
+            return state
         else:
-            # In testing mode, provide a simulated response
-            user_response = "I want to build a web application for managing inventory"
-            print_action(f"Testing mode - simulated response: '{user_response}'")
-        
-        if user_response:
-            state["clarification_responses"].append(user_response)
-            add_conversation(state, "user", user_response)
-            add_step(state, f"Received clarification response: {user_response}")
+            # Interactive mode - get user input directly
+            if not TESTING_MODE:
+                print("\n" + "="*60)
+                print("🤖 CLARIFICATION NEEDED")
+                print("="*60)
+                print(f"❓ {question}")
+                print("-"*60)
+                
+                # Get real user input
+                user_response = input("💬 Your response: ").strip()
+            else:
+                # In testing mode, provide a simulated response
+                user_response = "I want to build a web application for managing inventory"
+                print_action(f"Testing mode - simulated response: '{user_response}'")
             
-            try:
-                writer = get_stream_writer()
-                writer(f"💬 User response received: {user_response}")
-            except:
-                pass
-            
-            # Update the user input with the clarified information
-            state["user_input"] = f"{state['user_input']} - {user_response}"
-            
-            try:
-                writer = get_stream_writer()
-                writer("🔄 Re-analyzing with new information...")
-            except:
-                pass
-            
-            # Re-run clarification analysis with the new information
-            updated_context = f"""
-            Original User Input: {state['user_input']}
-            Clarification Question: {question}
-            User Response: {user_response}
-            
-            Conversation History:
-            {json.dumps(state["conversation_history"], indent=2)}
-            """
-            
-            updated_prompt = f"""
-            {updated_context}
-            
-            Now that the user has provided more information, is the request clear enough to proceed?
-            
-            Respond in one of these formats:
-            - "CLARIFIED: [clear summary of what they want]" if ready to proceed
-            - "QUESTION: [your follow-up question]" if still need more clarification
-            """
-            
-            follow_up_response = llm.call_gpt4o(updated_prompt, system_prompt)
-            
-            try:
-                writer = get_stream_writer()
-                writer(f"🔄 Follow-up analysis: {follow_up_response[:50]}...")
-            except:
-                pass
-            
-            if follow_up_response.startswith("CLARIFIED:"):
-                state["clarified"] = True
-                state["refined_prompt"] = follow_up_response[10:].strip()
-                add_step(state, "Clarification completed after user response")
+            if user_response:
+                state["clarification_responses"].append(user_response)
+                add_conversation(state, "user", user_response)
+                add_step(state, f"Received clarification response: {user_response}")
                 
                 try:
                     writer = get_stream_writer()
-                    writer("✅ Request clarified and ready to proceed!")
+                    writer(f"💬 User response received: {user_response}")
                 except:
                     pass
-                    
-                print_result("Clarification completed after user interaction")
-            else:
-                # Still need more clarification, but limit to prevent infinite loops
-                if len(state["clarification_questions"]) >= 2:
+                
+                # Update the user input with the clarified information
+                state["user_input"] = f"{state['user_input']} - {user_response}"
+                
+                try:
+                    writer = get_stream_writer()
+                    writer("🔄 Re-analyzing with new information...")
+                except:
+                    pass
+                
+                # Re-run clarification analysis with the new information
+                updated_context = f"""
+                Original User Input: {state['user_input']}
+                Clarification Question: {question}
+                User Response: {user_response}
+                
+                Conversation History:
+                {json.dumps(state["conversation_history"], indent=2)}
+                """
+                
+                updated_prompt = f"""
+                {updated_context}
+                
+                Now that the user has provided more information, is the request clear enough to proceed?
+                
+                Respond in one of these formats:
+                - "CLARIFIED: [clear summary of what they want]" if ready to proceed
+                - "QUESTION: [your follow-up question]" if still need more clarification
+                """
+                
+                follow_up_response = llm.call_gpt4o(updated_prompt, system_prompt)
+                
+                try:
+                    writer = get_stream_writer()
+                    writer(f"🔄 Follow-up analysis: {follow_up_response[:50]}...")
+                except:
+                    pass
+                
+                if follow_up_response.startswith("CLARIFIED:"):
                     state["clarified"] = True
-                    state["refined_prompt"] = f"{state['user_input']} - {user_response}"
-                    add_step(state, "Maximum clarification rounds reached - proceeding")
+                    state["refined_prompt"] = follow_up_response[10:].strip()
+                    add_step(state, "Clarification completed after user response")
                     
                     try:
                         writer = get_stream_writer()
-                        writer("⚡ Max clarification rounds reached - proceeding anyway")
+                        writer("✅ Request clarified and ready to proceed!")
                     except:
                         pass
                         
-                    print_result("Proceeding after maximum clarification rounds")
-        else:
-            # User didn't provide a response, use original input
-            state["clarified"] = True
-            state["refined_prompt"] = state["user_input"]
-            add_step(state, "No clarification response - proceeding with original")
-            print_result("Proceeding with original input (no user response)")
+                    print_result("Clarification completed after user interaction")
+                else:
+                    # Still need more clarification, but limit to prevent infinite loops
+                    if len(state["clarification_questions"]) >= 2:
+                        state["clarified"] = True
+                        state["refined_prompt"] = f"{state['user_input']} - {user_response}"
+                        add_step(state, "Maximum clarification rounds reached - proceeding")
+                        
+                        try:
+                            writer = get_stream_writer()
+                            writer("⚡ Max clarification rounds reached - proceeding anyway")
+                        except:
+                            pass
+                            
+                        print_result("Proceeding after maximum clarification rounds")
+            else:
+                # User didn't provide a response, use original input
+                state["clarified"] = True
+                state["refined_prompt"] = state["user_input"]
+                add_step(state, "No clarification response - proceeding with original")
+                print_result("Proceeding with original input (no user response)")
     
     else:
         # Fallback - assume clarified
@@ -1149,12 +1169,23 @@ def build_agent_graph() -> StateGraph:
     )
     
     # Add conditional edges for clarification loop
+    def clarification_router(state):
+        if state["clarified"]:
+            # Check if this is HTTP mode clarification (has clarification_question)
+            if "clarification_question" in state and state["clarification_question"]:
+                return "needs_clarification"  # End the graph for HTTP mode
+            else:
+                return "refined"  # Continue to refinement for interactive mode
+        else:
+            return "continue"  # Continue clarification loop
+    
     graph.add_conditional_edges(
         "clarify_loop",
-        lambda state: "refined" if state["clarified"] else "continue",
+        clarification_router,
         {
             "continue": "clarify_loop",
-            "refined": "refine_prompt"
+            "refined": "refine_prompt",
+            "needs_clarification": END  # End the graph when clarification is needed
         }
     )
     

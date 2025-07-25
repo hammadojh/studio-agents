@@ -10,6 +10,7 @@ A comprehensive LangGraph-powered AI assistant that intelligently routes user re
 - **Claude Code Integration**: Full Claude Code CLI integration with streaming output and complete permissions
 - **Direct LLM Answers**: Provides informational responses using GPT-4o
 - **Interactive Mode**: Command-line interface for testing and demonstration
+- **Web Interface**: Real-time web interface with WebSocket streaming and beautiful UI
 
 ## 📋 System Architecture
 
@@ -82,6 +83,24 @@ result = agent.process_request("Build a web app for inventory management")
 print(f"Route taken: {result['route_taken']}")
 print(f"Final result: {result['final_result']}")
 ```
+
+### Web Interface
+```bash
+# Start the web interface
+python start_web_interface.py
+
+# Or use the runner script directly
+python web_interface/run_server.py
+```
+
+**Features:**
+- **Real-time Communication**: WebSocket-based streaming for instant updates
+- **Beautiful UI**: Modern, responsive interface with status indicators
+- **Session Management**: Multiple concurrent users with isolated sessions  
+- **Live Processing**: Watch the agent's thinking process in real-time
+- **Mobile Responsive**: Works on desktop and mobile devices
+
+Navigate to **http://localhost:8000** to use the web interface.
 
 ## 📝 Example Requests
 
@@ -198,9 +217,9 @@ The system tracks processing steps in `state.processing_steps` for debugging rou
 - ✅ Prompt Refinement
 - ✅ Direct LLM Answers
 - ✅ Interactive Interface
-- ✅ Claude Code Integration (Full Implementation)
+- ✅ Claude Code Integration (Full Implementation)  
+- ✅ Web Interface (Real-time WebSocket streaming)
 - 🔄 Vector Memory (Future)
-- 🔄 Web Interface (Future)
 
 ## 📚 Documentation
 
@@ -209,5 +228,9 @@ Each component is thoroughly documented with:
 - Input/output specifications  
 - Error handling approaches
 - Integration points for extensions
+
+### Additional Documentation
+- **Web Interface Guide**: See `docs/web_interface_guide.md` for complete web interface documentation
+- **Original Web Design**: See `docs/web.md` for the initial implementation guide
 
 The system is designed to be modular and extensible, making it easy to add new routing categories, processing nodes, or integration points as needed. 

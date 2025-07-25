@@ -30,3 +30,12 @@ langsmith>=0.1.0
 #visualization
 matplotlib
 networkx
+
+# Web interface and API dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.23.0
+websockets>=11.0.0
+python-multipart>=0.0.6
+
+# Unicode art for Hello application
+pyfiglet>=1.0.0
