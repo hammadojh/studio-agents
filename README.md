@@ -14,6 +14,18 @@ A comprehensive LangGraph-powered AI assistant that intelligently routes user re
 
 ## 📋 System Architecture
 
+### Complete System Overview
+![System Architecture](full_system_architecture.mmd)
+
+The LangGraph Agent System features a comprehensive architecture with multiple layers:
+
+**🌐 User Interface Layer**: Web browser and command-line interfaces
+**⚡ Web Interface Layer**: FastAPI server with WebSocket streaming and session management  
+**🤖 Core Agent System**: LangGraph-powered intelligent routing and processing
+**🌍 External Services**: OpenAI, Anthropic, and Claude Code CLI integrations
+**💾 State Management**: Agent state and multi-user session storage
+
+### Core Processing Flow
 ```
 User Input
     ↓
@@ -30,6 +42,10 @@ Route Analysis (GPT-4o)
 │ Claude Code │ (LIVE)      │             │
 └─────────────┴─────────────┴─────────────┘
 ```
+
+### Architecture Files
+- **Complete System**: `full_system_architecture.mmd` - Comprehensive architecture diagram
+- **LangGraph Flow**: `langgraph_agent_diagram.mmd` - Core agent workflow diagram
 
 ## 🛠️ Installation
 

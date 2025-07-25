@@ -1,0 +1,115 @@
+---
+title: "LangGraph Agent System - Complete Architecture"
+config:
+  flowchart:
+    curve: linear
+---
+graph TB
+    %% User Interface Layer
+    subgraph UI_Layer ["🌐 User Interface Layer"]
+        Browser["Web Browser<br/>User Interface"]
+        CLI_Int["Command Line<br/>Interface"]
+    end
+
+    %% Web Interface Layer
+    subgraph Web_Layer ["⚡ Web Interface Layer"]
+        WebSocket["WebSocket<br/>Connection"]
+        FastAPI_Server["FastAPI Server<br/>main.py"]
+        SessionMgr["Session Manager<br/>Multi-user Support"]
+        Health["Health & Status<br/>Monitoring"]
+    end
+
+    %% Core Agent System
+    subgraph Agent_Layer ["🤖 LangGraph Agent System"]
+        Start(["Start"])
+        RouteAnalysis["Route Analysis<br/>GPT-4o"]
+        
+        subgraph Clarify_Path ["❓ Clarification Path"]
+            ClarifyLoop["Clarify Loop<br/>Multi-turn Questions"]
+            RefinePrompt1["Refine Prompt<br/>Polish Request"]
+        end
+        
+        subgraph Code_Path ["💻 Code Generation Path"]
+            RefinePrompt2["Refine Prompt<br/>Code-ready"]
+            ClaudeCode["Claude Code CLI<br/>Live Execution"]
+        end
+        
+        subgraph Answer_Path ["💬 Direct Answer Path"]
+            AnswerLLM["Answer with LLM<br/>GPT-4o Response"]
+        end
+        
+        End(["End"])
+    end
+
+    %% External Services
+    subgraph External_Layer ["🌍 External Services"]
+        OpenAI["OpenAI API<br/>GPT-4o"]
+        Anthropic["Anthropic API<br/>Claude"]
+        NPM_CLI["NPM/Claude CLI<br/>Code Execution"]
+    end
+
+    %% State Management
+    subgraph State_Layer ["💾 State & Data"]
+        AgentState["Agent State<br/>Conversation History"]
+        SessionStore["Session Store<br/>Multi-user Data"]
+    end
+
+    %% User Connections
+    Browser -.->|"HTTP Request"| FastAPI_Server
+    Browser <-->|"Real-time WebSocket"| WebSocket
+    CLI_Int -.->|"Direct Python Call"| Start
+
+    %% Web Interface Flow
+    WebSocket <--> FastAPI_Server
+    FastAPI_Server <--> SessionMgr
+    FastAPI_Server <--> Health
+    SessionMgr <--> SessionStore
+    FastAPI_Server -.->|"Stream Agent Steps"| Start
+
+    %% LangGraph Flow
+    Start --> RouteAnalysis
+    RouteAnalysis -.->|"clarify"| ClarifyLoop
+    RouteAnalysis -.->|"code"| RefinePrompt2
+    RouteAnalysis -.->|"answer"| AnswerLLM
+    
+    ClarifyLoop -.->|"needs_clarification"| End
+    ClarifyLoop -.->|"continue"| ClarifyLoop
+    ClarifyLoop -.->|"refined"| RefinePrompt1
+    RefinePrompt1 --> ClaudeCode
+    RefinePrompt2 --> ClaudeCode
+    ClaudeCode --> End
+    AnswerLLM --> End
+
+    %% External API Connections
+    RouteAnalysis <-.->|"Classification"| OpenAI
+    AnswerLLM <-.->|"Direct Response"| OpenAI
+    ClarifyLoop <-.->|"Question Generation"| OpenAI
+    RefinePrompt1 <-.->|"Prompt Polish"| OpenAI
+    RefinePrompt2 <-.->|"Prompt Polish"| OpenAI
+    ClaudeCode <-.->|"Code Generation"| NPM_CLI
+    NPM_CLI <-.->|"API Calls"| Anthropic
+
+    %% State Connections
+    Start <--> AgentState
+    RouteAnalysis <--> AgentState
+    ClarifyLoop <--> AgentState
+    RefinePrompt1 <--> AgentState
+    RefinePrompt2 <--> AgentState
+    ClaudeCode <--> AgentState
+    AnswerLLM <--> AgentState
+    End <--> AgentState
+
+    %% Styling
+    classDef userLayer fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef webLayer fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef agentLayer fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+    classDef externalLayer fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef stateLayer fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    classDef startEnd fill:#ffebee,stroke:#c62828,stroke-width:3px
+
+    class Browser,CLI_Int userLayer
+    class WebSocket,FastAPI_Server,SessionMgr,Health webLayer
+    class Start,RouteAnalysis,ClarifyLoop,RefinePrompt1,RefinePrompt2,ClaudeCode,AnswerLLM agentLayer
+    class OpenAI,Anthropic,NPM_CLI externalLayer
+    class AgentState,SessionStore stateLayer
+    class Start,End startEnd 
