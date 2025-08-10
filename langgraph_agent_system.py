@@ -176,6 +176,9 @@ class LLMManager:
             temperature=0.7,
             openai_api_key=self.openai_api_key
         )
+        
+        # Load prompts from JSON file
+        self.prompts = self._load_prompts()
     
     @conditional_traceable
     def call_gpt4o(self, prompt: str, system_prompt: str = "", max_tokens: int = 1000) -> str:
@@ -239,6 +242,64 @@ class LLMManager:
                 pass
                 
             return error_msg
+    
+    def _load_prompts(self) -> Dict[str, Any]:
+        """Load prompts from the JSON configuration file."""
+        try:
+            prompts_file = Path(__file__).parent / "agent_prompts.json"
+            with open(prompts_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            print("Warning: agent_prompts.json not found. Using fallback prompts.")
+            return self._get_fallback_prompts()
+        except json.JSONDecodeError as e:
+            print(f"Warning: Error parsing agent_prompts.json: {e}. Using fallback prompts.")
+            return self._get_fallback_prompts()
+    
+    def _get_fallback_prompts(self) -> Dict[str, Any]:
+        """Fallback prompts in case the JSON file is not available."""
+        return {
+            "clarification_agent": {
+                "system_prompt": "You are a clarification specialist.",
+                "user_prompt_template": "{context}\n\nBased on the above information, is this request clear enough to proceed?"
+            },
+            "routing_agent": {
+                "system_prompt": "You are a task router.",
+                "user_prompt_template": "User request: \"{input_text}\"\n\nHow should this request be routed?"
+            },
+            "refinement_agent": {
+                "system_prompt": "You are a prompt refinement specialist.",
+                "user_prompt_template": "Original user request: \"{original_input}\"\n\nPlease refine this."
+            },
+            "answer_agent": {
+                "system_prompt": "You are a helpful AI assistant.",
+                "user_prompt_template": "User question: \"{question}\"\n\nPlease provide a comprehensive answer."
+            }
+        }
+    
+    def get_prompt(self, agent_type: str, template_vars: Dict[str, Any] = None) -> tuple[str, str]:
+        """Get system prompt and formatted user prompt for a specific agent.
+        
+        Args:
+            agent_type: The type of agent (e.g., 'clarification_agent', 'routing_agent')
+            template_vars: Variables to substitute in the user prompt template
+            
+        Returns:
+            Tuple of (system_prompt, formatted_user_prompt)
+        """
+        if agent_type not in self.prompts:
+            raise ValueError(f"Unknown agent type: {agent_type}")
+        
+        agent_config = self.prompts[agent_type]
+        system_prompt = agent_config["system_prompt"]
+        user_template = agent_config["user_prompt_template"]
+        
+        if template_vars:
+            user_prompt = user_template.format(**template_vars)
+        else:
+            user_prompt = user_template
+            
+        return system_prompt, user_prompt
 
 
 # ============================================================================
@@ -285,32 +346,11 @@ def clarify_loop(state: AgentState) -> AgentState:
     Previous responses received: {state["clarification_responses"]}
     """
     
-    # System prompt for clarification agent
-    system_prompt = """
-    You are a clarification specialist. Your job is to determine if the user's request
-    is clear enough to proceed, or if you need to ask follow-up questions.
-    
-    Consider a request "clear enough" if you can understand:
-    1. What the user wants to accomplish
-    2. The general domain/context (web app, mobile app, data analysis, etc.)
-    3. Any specific requirements or constraints
-    
-    If the request is too vague, ask 1-2 specific follow-up questions.
-    If it's clear enough, respond with "CLARIFIED: [summary of what they want]"
-    
-    Keep questions focused and avoid asking too many at once.
-    """
-    
-    clarification_prompt = f"""
-    {context}
-    
-    Based on the above information, is this request clear enough to proceed?
-    If not, what specific questions should I ask to clarify?
-    
-    Respond in one of these formats:
-    - "CLARIFIED: [clear summary of the request]" if ready to proceed
-    - "QUESTION: [your follow-up question]" if more clarification needed
-    """
+    # Get prompts for clarification agent
+    template_vars = {
+        "context": context
+    }
+    system_prompt, clarification_prompt = llm.get_prompt("clarification_agent", template_vars)
     
     try:
         writer = get_stream_writer()
@@ -424,15 +464,9 @@ def clarify_loop(state: AgentState) -> AgentState:
                 {json.dumps(state["conversation_history"], indent=2)}
                 """
                 
-                updated_prompt = f"""
-                {updated_context}
-                
-                Now that the user has provided more information, is the request clear enough to proceed?
-                
-                Respond in one of these formats:
-                - "CLARIFIED: [clear summary of what they want]" if ready to proceed
-                - "QUESTION: [your follow-up question]" if still need more clarification
-                """
+                # Get updated prompts
+                updated_template_vars = {"context": updated_context}
+                system_prompt, updated_prompt = llm.get_prompt("clarification_agent", updated_template_vars)
                 
                 follow_up_response = llm.call_gpt4o(updated_prompt, system_prompt)
                 
@@ -531,35 +565,12 @@ def route_prompt(state: AgentState) -> AgentState:
     except:
         pass
     
-    system_prompt = """
-    You are a task router. Classify user requests into one of three categories:
-    
-    1. CLARIFY - The request is too vague or ambiguous. Examples:
-       - "I want to build something"
-       - "Help me with my project"
-       - "I need an app"
-    
-    2. CODE - The request involves coding, development, or technical implementation. Examples:
-       - "Build a web app for inventory management"
-       - "Create a Python script to analyze data"
-       - "Fix this bug in my React component"
-       - "Add authentication to my app"
-    
-    3. ANSWER - The request is asking for information, explanation, or guidance. Examples:
-       - "What is the best way to deploy a web app?"
-       - "Explain how authentication works"
-       - "What are the pros and cons of React vs Vue?"
-    
-    Respond with only: CLARIFY, CODE, or ANSWER
-    """
-    
-    routing_prompt = f"""
-    User request: "{input_text}"
-    
-    Conversation context: {json.dumps(state["conversation_history"][-3:], indent=2)}
-    
-    How should this request be routed?
-    """
+    # Get prompts for routing agent
+    template_vars = {
+        "input_text": input_text,
+        "conversation_history": json.dumps(state["conversation_history"][-3:], indent=2)
+    }
+    system_prompt, routing_prompt = llm.get_prompt("routing_agent", template_vars)
     
     try:
         writer = get_stream_writer()
@@ -649,30 +660,13 @@ def refine_prompt(state: AgentState) -> AgentState:
     except:
         pass
     
-    system_prompt = """
-    You are a prompt refinement specialist. Your job is to take a clarified user request
-    and turn it into a clear, actionable prompt suitable for a coding assistant.
-    
-    A good refined prompt should:
-    1. Be specific and actionable
-    2. Include clear requirements and constraints
-    3. Specify the technology stack if relevant
-    4. Include any quality or style preferences
-    5. Be well-structured and easy to understand
-    
-    Format your response as a clear, professional task description.
-    """
-    
-    refinement_prompt = f"""
-    Original user request: "{state['user_input']}"
-    
-    Clarified request: "{base_prompt}"
-    
-    Conversation context: {json.dumps(state["conversation_history"], indent=2)}
-    
-    Please refine this into a clear, actionable prompt for a coding assistant.
-    Focus on making it specific enough to produce high-quality results.
-    """
+    # Get prompts for refinement agent
+    template_vars = {
+        "original_input": state['user_input'],
+        "clarified_request": base_prompt,
+        "conversation_history": json.dumps(state["conversation_history"], indent=2)
+    }
+    system_prompt, refinement_prompt = llm.get_prompt("refinement_agent", template_vars)
     
     try:
         writer = get_stream_writer()
@@ -1031,23 +1025,12 @@ def answer_with_llm(state: AgentState) -> AgentState:
     except:
         pass
     
-    system_prompt = """
-    You are a helpful AI assistant. Provide clear, accurate, and comprehensive
-    answers to user questions. Structure your responses well and include
-    practical examples when relevant.
-    
-    If the question is technical, provide both conceptual explanations and
-    practical guidance. If it's about best practices, include pros/cons and
-    real-world considerations.
-    """
-    
-    answer_prompt = f"""
-    User question: "{question}"
-    
-    Context from conversation: {json.dumps(state["conversation_history"], indent=2)}
-    
-    Please provide a comprehensive answer to this question.
-    """
+    # Get prompts for answer agent
+    template_vars = {
+        "question": question,
+        "conversation_history": json.dumps(state["conversation_history"], indent=2)
+    }
+    system_prompt, answer_prompt = llm.get_prompt("answer_agent", template_vars)
     
     try:
         writer = get_stream_writer()

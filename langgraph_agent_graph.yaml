@@ -1,0 +1,565 @@
+# LangGraph Agent System - Graph Definition
+# This YAML file represents the complete graph structure from langgraph_agent_system.py
+# Generated from analysis of the Python implementation
+
+metadata:
+  name: "LangGraph Agent System"
+  version: "1.0.0"
+  description: "AI assistant with intelligent routing through clarification, code generation, or direct answering workflows"
+  author: "AI Assistant"
+  created_date: "2024"
+  framework: "LangGraph"
+  python_file: "langgraph_agent_system.py"
+
+# State Schema Definition
+state_schema:
+  name: "AgentState"
+  type: "TypedDict"
+  description: "Central state management for the LangGraph agent system"
+  fields:
+    # Input and conversation management
+    user_input:
+      type: "str"
+      description: "The user's initial request or question"
+      required: true
+    
+    conversation_history:
+      type: "List[Dict[str, str]]"
+      description: "History of conversation with role and message pairs"
+      default: []
+    
+    # Clarification state
+    clarified:
+      type: "bool" 
+      description: "Whether the user request has been clarified sufficiently"
+      default: false
+    
+    clarification_questions:
+      type: "List[str]"
+      description: "Questions asked to clarify vague requests"
+      default: []
+    
+    clarification_responses:
+      type: "List[str]"
+      description: "User responses to clarification questions"
+      default: []
+    
+    # Routing and processing
+    route:
+      type: "Optional[RouteType]"
+      description: "Routing decision (CLARIFY, CODE, or ANSWER)"
+      default: null
+    
+    refined_prompt:
+      type: "str"
+      description: "Refined and polished prompt ready for execution"
+      default: ""
+    
+    # Results
+    final_result:
+      type: "str"
+      description: "Final output of the processing pipeline"
+      default: ""
+    
+    error_message:
+      type: "str"
+      description: "Error message if processing fails"
+      default: ""
+    
+    # Metadata
+    processing_steps:
+      type: "List[str]"
+      description: "Step-by-step processing log for debugging and transparency"
+      default: []
+
+# Route Types Enumeration
+route_types:
+  CLARIFY:
+    value: "clarify"
+    description: "Request is too vague and needs clarification"
+    examples:
+      - "I want to build something"
+      - "Help me with my project"
+      - "I need an app"
+  
+  CODE:
+    value: "code"
+    description: "Request involves coding/development work (Claude Code)"
+    examples:
+      - "Build a web app for inventory management"
+      - "Create a Python script to analyze CSV data"
+      - "Add user authentication to my React app"
+  
+  ANSWER:
+    value: "answer"
+    description: "Request can be answered directly with information"
+    examples:
+      - "What is the best way to deploy a web app?"
+      - "Explain how JWT authentication works"
+      - "What are the pros and cons of React vs Vue?"
+
+# Graph Nodes Definition
+nodes:
+  route_prompt:
+    function_name: "route_prompt"
+    description: "Intelligent routing node that classifies user requests"
+    purpose: "Analyzes user input and determines which processing path to take"
+    
+    inputs:
+      - user_input
+      - conversation_history
+    
+    outputs:
+      - route
+      - processing_steps
+    
+    implementation:
+      llm_model: "GPT-4o"
+      temperature: 0.7
+      max_tokens: 1000
+      
+      system_prompt: |
+        You are a task router. Classify user requests into one of three categories:
+        
+        1. CLARIFY - The request is too vague or ambiguous
+        2. CODE - The request involves coding, development, or technical implementation  
+        3. ANSWER - The request is asking for information, explanation, or guidance
+        
+        Respond with only: CLARIFY, CODE, or ANSWER
+    
+    routing_logic:
+      criteria:
+        vague_indicators:
+          - "something"
+          - "project"  
+          - "app" (without specifics)
+          - "help me"
+        
+        code_indicators:
+          - "build"
+          - "create"
+          - "develop"
+          - "script"
+          - "application"
+          - "fix"
+          - "add"
+          - technology_names
+        
+        answer_indicators:
+          - "what is"
+          - "how does"
+          - "explain"
+          - "difference between"
+          - "pros and cons"
+          - "best way"
+
+  clarify_loop:
+    function_name: "clarify_loop"
+    description: "Multi-turn clarification node for vague requests"
+    purpose: "Asks follow-up questions to understand user intent better"
+    
+    inputs:
+      - user_input
+      - conversation_history
+      - clarified
+      - clarification_questions
+      - clarification_responses
+    
+    outputs:
+      - clarified
+      - refined_prompt
+      - conversation_history
+      - clarification_questions
+      - clarification_responses
+      - processing_steps
+    
+    implementation:
+      llm_model: "GPT-4o"
+      temperature: 0.7
+      max_tokens: 1000
+      
+      system_prompt: |
+        You are a clarification specialist. Your job is to determine if the user's request
+        is clear enough to proceed, or if you need to ask follow-up questions.
+        
+        Consider a request "clear enough" if you can understand:
+        1. What the user wants to accomplish
+        2. The general domain/context (web app, mobile app, data analysis, etc.)
+        3. Any specific requirements or constraints
+        
+        If the request is too vague, ask 1-2 specific follow-up questions.
+        If it's clear enough, respond with "CLARIFIED: [summary of what they want]"
+    
+    loop_configuration:
+      max_clarification_rounds: 2
+      continue_condition: "not state['clarified']"
+      fallback_action: "proceed_with_original_input"
+    
+    execution_modes:
+      interactive:
+        description: "Gets real user input via console"
+        behavior: "prompt_user_for_response"
+      
+      http:
+        description: "Web service mode"  
+        behavior: "return_question_and_end_graph"
+      
+      testing:
+        description: "Automated testing mode"
+        behavior: "use_simulated_response"
+        simulated_response: "I want to build a web application for managing inventory"
+
+  refine_prompt:
+    function_name: "refine_prompt"
+    description: "Prompt refinement node for Claude Code execution"
+    purpose: "Polishes clarified request into actionable prompt suitable for coding assistant"
+    
+    inputs:
+      - refined_prompt
+      - user_input
+      - conversation_history
+    
+    outputs:
+      - refined_prompt
+      - processing_steps
+    
+    implementation:
+      llm_model: "GPT-4o"
+      temperature: 0.7
+      max_tokens: 1000
+      
+      system_prompt: |
+        You are a prompt refinement specialist. Your job is to take a clarified user request
+        and turn it into a clear, actionable prompt suitable for a coding assistant.
+        
+        A good refined prompt should:
+        1. Be specific and actionable
+        2. Include clear requirements and constraints
+        3. Specify the technology stack if relevant
+        4. Include any quality or style preferences
+        5. Be well-structured and easy to understand
+        
+        Format your response as a clear, professional task description.
+    
+    refinement_criteria:
+      - "Make it specific and actionable"
+      - "Include clear requirements and constraints"
+      - "Specify technology stack if relevant"
+      - "Add quality or style preferences"
+      - "Ensure well-structured and easy to understand"
+
+  run_claude_code:
+    function_name: "run_claude_code"
+    description: "Claude Code execution node with full access and streaming"
+    purpose: "Executes refined prompt using Claude Code CLI with real-time output"
+    
+    inputs:
+      - refined_prompt
+    
+    outputs:
+      - final_result
+      - error_message
+      - processing_steps
+    
+    implementation:
+      command: "claude"
+      arguments:
+        - "-p"  # Print mode (non-interactive)
+        - "{{ refined_prompt }}"  # The prompt to execute
+        - "--output-format"
+        - "stream-json"  # Stream JSON for real-time output
+        - "--verbose"  # Required for stream-json output format
+        - "--dangerously-skip-permissions"  # Full access as requested
+      
+      timeout_seconds: 600  # 10 minute timeout
+      streaming: true
+      real_time_parsing: true
+      
+      output_parsing:
+        thinking_messages: "🧠 Claude thinking:"
+        tool_actions: "📝 Creating file:"
+        results: "✅ File created successfully"
+        errors: "❌ Tool error:"
+        completion: "✅ Claude Code completed successfully!"
+      
+      error_handling:
+        timeout: "Claude Code execution timed out (10 minutes)"
+        not_found: "Claude Code CLI not found. Please install: npm install -g @anthropic-ai/claude-code"
+        unexpected: "Unexpected error during Claude Code execution"
+
+  answer_with_llm:
+    function_name: "answer_with_llm"
+    description: "Direct LLM answer node for informational requests"
+    purpose: "Provides comprehensive answers to user questions using GPT-4o"
+    
+    inputs:
+      - refined_prompt
+      - user_input
+      - conversation_history
+    
+    outputs:
+      - final_result
+      - processing_steps
+    
+    implementation:
+      llm_model: "GPT-4o"
+      temperature: 0.7
+      max_tokens: 1500
+      
+      system_prompt: |
+        You are a helpful AI assistant. Provide clear, accurate, and comprehensive
+        answers to user questions. Structure your responses well and include
+        practical examples when relevant.
+        
+        If the question is technical, provide both conceptual explanations and
+        practical guidance. If it's about best practices, include pros/cons and
+        real-world considerations.
+
+# Graph Edges and Flow Control
+edges:
+  entry_point: "route_prompt"
+  
+  conditional_edges:
+    route_prompt:
+      condition_function: "lambda state: state['route'].value if state['route'] else 'clarify'"
+      description: "Routes based on classification result"
+      
+      routes:
+        "clarify": "clarify_loop"
+        "code": "refine_prompt"
+        "answer": "answer_with_llm"
+      
+      fallback: "clarify_loop"
+    
+    clarify_loop:
+      condition_function: "clarification_router"
+      description: "Determines if clarification is complete or needs to continue"
+      
+      routing_logic: |
+        def clarification_router(state):
+            if state["clarified"]:
+                # Check if this is HTTP mode clarification (has clarification_question)
+                if "clarification_question" in state and state["clarification_question"]:
+                    return "needs_clarification"  # End the graph for HTTP mode
+                else:
+                    return "refined"  # Continue to refinement for interactive mode
+            else:
+                return "continue"  # Continue clarification loop
+      
+      routes:
+        "continue": "clarify_loop"
+        "refined": "refine_prompt"
+        "needs_clarification": "END"
+  
+  direct_edges:
+    - source: "refine_prompt"
+      target: "run_claude_code"
+      description: "Refined prompt goes directly to Claude Code execution"
+    
+    - source: "run_claude_code"
+      target: "END"
+      description: "Code execution completes the workflow"
+    
+    - source: "answer_with_llm"
+      target: "END"
+      description: "Direct answer completes the workflow"
+
+# Execution Flow Patterns
+execution_flows:
+  clarification_workflow:
+    description: "For vague requests needing clarification"
+    path:
+      - "route_prompt"
+      - "clarify_loop"
+      - "refine_prompt"
+      - "run_claude_code"
+      - "END"
+    
+    conditions:
+      - "Initial request is vague or unclear"
+      - "User provides clarification responses"
+      - "Request becomes clear enough to proceed"
+  
+  direct_code_workflow:
+    description: "For clear coding requests"
+    path:
+      - "route_prompt"
+      - "refine_prompt"
+      - "run_claude_code"
+      - "END"
+    
+    conditions:
+      - "Request clearly involves coding/development"
+      - "No clarification needed"
+  
+  direct_answer_workflow:
+    description: "For informational questions"
+    path:
+      - "route_prompt"
+      - "answer_with_llm"
+      - "END"
+    
+    conditions:
+      - "Request is asking for information or explanation"
+      - "No code generation required"
+
+# Configuration and Monitoring
+configuration:
+  llm_manager:
+    openai_model: "gpt-4o"
+    anthropic_model: "claude-sonnet-4-20250514"
+    temperature: 0.7
+    default_max_tokens: 1000
+  
+  execution_modes:
+    interactive: 
+      description: "Command-line interface with real user interaction"
+      clarification_handling: "prompt_user_console"
+    
+    http:
+      description: "Web interface mode with WebSocket streaming"
+      clarification_handling: "return_question_end_graph"
+    
+    testing:
+      description: "Automated testing mode with simulated responses"
+      clarification_handling: "use_predefined_responses"
+  
+  monitoring:
+    langsmith_tracing: true
+    langsmith_project: "langraph-agent-system"
+    streaming_updates: true
+    real_time_feedback: true
+    performance_metrics: true
+    error_tracking: true
+    step_logging: true
+  
+  timeouts:
+    claude_code_execution: 600  # 10 minutes
+    llm_response: 120  # 2 minutes
+    user_clarification: null  # No timeout in interactive mode
+
+# Error Handling Strategy
+error_handling:
+  api_failures:
+    strategy: "graceful_degradation"
+    fallback: "return_error_message"
+    retry_attempts: 3
+  
+  timeout_handling:
+    claude_code: "terminate_process_return_error"
+    llm_calls: "return_timeout_message"
+  
+  invalid_routes:
+    strategy: "default_to_clarification"
+    fallback_node: "clarify_loop"
+  
+  state_corruption:
+    strategy: "reset_to_safe_state"
+    preserve: ["user_input", "conversation_history"]
+
+# Performance Optimization
+performance:
+  streaming:
+    enabled: true
+    chunk_size: "real_time"
+    buffer_size: 1024
+  
+  concurrent_processing:
+    enabled: false  # Sequential processing for state consistency
+    max_workers: 1
+  
+  caching:
+    enabled: false  # Real-time processing required  
+    ttl: null
+  
+  memory_management:
+    max_conversation_history: 100
+    cleanup_inactive_sessions: true
+    session_timeout: 3600  # 1 hour
+
+# Documentation and Examples
+examples:
+  clarification_triggers:
+    - input: "I want to build something"
+      expected_route: "CLARIFY"
+      expected_question: "What kind of application would you like to build?"
+    
+    - input: "Help me with my project"
+      expected_route: "CLARIFY"
+      expected_question: "Could you tell me more about your project?"
+  
+  code_triggers:
+    - input: "Build a Python web scraper for news articles"
+      expected_route: "CODE"
+      expected_flow: "route_prompt -> refine_prompt -> run_claude_code"
+    
+    - input: "Create a React component for user authentication"
+      expected_route: "CODE"
+      expected_flow: "route_prompt -> refine_prompt -> run_claude_code"
+  
+  answer_triggers:
+    - input: "What is the difference between REST and GraphQL?"
+      expected_route: "ANSWER"
+      expected_flow: "route_prompt -> answer_with_llm"
+    
+    - input: "Explain how JWT authentication works"
+      expected_route: "ANSWER"
+      expected_flow: "route_prompt -> answer_with_llm"
+
+# Validation Rules
+validation:
+  state_transitions:
+    - from: "route_prompt"
+      to: ["clarify_loop", "refine_prompt", "answer_with_llm"]
+      condition: "valid_route_decision"
+    
+    - from: "clarify_loop"
+      to: ["clarify_loop", "refine_prompt", "END"]
+      condition: "clarification_logic"
+    
+    - from: "refine_prompt"
+      to: ["run_claude_code"]
+      condition: "always"
+    
+    - from: "run_claude_code"
+      to: ["END"]  
+      condition: "always"
+    
+    - from: "answer_with_llm"
+      to: ["END"]
+      condition: "always"
+  
+  required_state_fields:
+    - user_input
+    - conversation_history
+    - processing_steps
+  
+  output_validation:
+    final_result: "must_not_be_empty_on_success"
+    error_message: "must_be_empty_on_success"
+    route: "must_be_valid_route_type"
+
+# Additional Metadata
+implementation_notes:
+  - "This YAML represents the Python implementation in langgraph_agent_system.py"
+  - "LangGraph does not natively support YAML configuration - this is a documentation format"
+  - "Actual execution requires the Python StateGraph implementation"
+  - "All node functions are implemented as Python functions with @conditional_traceable decorators"
+  - "WebSocket streaming integration provides real-time updates during execution"
+  - "Claude Code CLI integration requires separate installation and API keys"
+  - "LangSmith integration provides observability and monitoring capabilities"
+
+version_info:
+  langgraph_version: ">=0.0.8"
+  langchain_version: ">=0.1.0"
+  python_version: ">=3.8"
+  required_dependencies:
+    - langgraph
+    - langchain
+    - langchain-openai
+    - langchain-community
+    - openai
+    - anthropic
+    - fastapi
+    - uvicorn
+    - websockets
